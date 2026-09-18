@@ -7,7 +7,7 @@ on:
   schedule:
     - cron: '13,43 * * * *'
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 concurrency:
@@ -21,6 +21,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Load published archive
+        uses: actions/checkout@v4
       - name: Fetch verified public briefing
         id: sync
         shell: bash
@@ -80,7 +82,7 @@ jobs:
                   if error.code != 404:
                       raise
                   previous = {}
-              if previous.get('sha256') == before['sha256']:
+              if previous.get('sha256') == before['sha256'] and Path('public/index.html').exists():
                   print('Already published:', before['date'])
                   return
               if previous.get('date', '') > before['date']:
@@ -109,6 +111,17 @@ jobs:
           if __name__ == '__main__':
               main()
           PY
+      - name: Preserve dated briefings
+        if: steps.sync.outputs.changed == 'true'
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public
+          if ! git diff --cached --quiet; then
+            git commit -m "Update published briefing archive"
+            git push
+          fi
       - name: Configure Pages
         if: steps.sync.outputs.changed == 'true'
         uses: actions/configure-pages@v5
