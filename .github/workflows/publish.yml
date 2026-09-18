@@ -1,0 +1,123 @@
+name: Publish briefing
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish.yml']
+  schedule:
+    - cron: '13,43 * * * *'
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: briefing-pages
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Fetch verified public briefing
+        id: sync
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          """Mirror the already-public Apps Script briefing without Google login cookies."""
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import time
+          import urllib.error
+          import urllib.request
+          
+          SOURCE = 'https://script.google.com/macros/s/AKfycbwv7jWqhuJKHi-CzPmoni5nQuPLzEiF8NB0BToqV-0DMCMmZ2O22My7Zehw6iBGZmVCIQ/exec'
+          PUBLIC = 'https://sion9015.github.io/etf-morning-briefing/'
+          
+          def fetch(url):
+              for attempt in range(3):
+                  request_url = url + ('&' if '?' in url else '?') + 'mirror_ts=' + str(time.time_ns())
+                  req = urllib.request.Request(request_url, headers={'User-Agent': 'ETF-Briefing-Public-Mirror/1.0', 'Cache-Control': 'no-cache'})
+                  try:
+                      with urllib.request.urlopen(req, timeout=45) as response:
+                          return response.read().decode('utf-8')
+                  except (urllib.error.URLError, TimeoutError) as error:
+                      if url.startswith(PUBLIC) and isinstance(error, urllib.error.HTTPError) and error.code == 404:
+                          raise
+                      if attempt == 2:
+                          raise
+                      time.sleep(2 ** attempt)
+          
+          def decode_escape(match):
+              value = match.group(1)
+              if value.startswith(('x', 'u')):
+                  return chr(int(value[1:], 16))
+              return {'n': '\n', 'r': '\r', 't': '\t', 'b': '\b', 'f': '\f', 'v': '\v', '0': '\0'}.get(value, value)
+          
+          def extract_html(wrapper):
+              # Parse data strings only. Never execute JavaScript returned by the source.
+              for literal in re.findall(r'"((?:\\.|[^"\\])*)"', wrapper):
+                  if 'userHtml' not in literal:
+                      continue
+                  decoded = re.sub(r'\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|.)', decode_escape, literal)
+                  value = json.loads(decoded)
+                  if isinstance(value, dict) and isinstance(value.get('userHtml'), str):
+                      return value['userHtml']
+              raise ValueError('Source HTML format changed; keep the last published page')
+          
+          def main():
+              before = json.loads(fetch(SOURCE + '?format=status'))
+              if not before.get('ready') or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', before.get('date', '')):
+                  raise ValueError('No verified public briefing available')
+              try:
+                  previous = json.loads(fetch(PUBLIC + 'status.json'))
+              except urllib.error.HTTPError as error:
+                  if error.code != 404:
+                      raise
+                  previous = {}
+              if previous.get('sha256') == before['sha256']:
+                  print('Already published:', before['date'])
+                  return
+              if previous.get('date', '') > before['date']:
+                  raise ValueError('Refusing to replace a newer briefing')
+              html = extract_html(fetch(SOURCE))
+              after = json.loads(fetch(SOURCE + '?format=status'))
+              if before != after:
+                  raise ValueError('Source changed during download; retry next run')
+              if before['date'].replace('-', '.') not in html or not all(f'id="s{i:02d}"' in html for i in range(1, 9)):
+                  raise ValueError('Briefing date or sections missing')
+              if '<!doctype html>' not in html.lower() or len(html.encode('utf-8')) > 160000:
+                  raise ValueError('Invalid briefing document')
+              output = Path('public')
+              output.mkdir(exist_ok=True)
+              (output / 'index.html').write_text(html, encoding='utf-8')
+              (output / (before['date'] + '.html')).write_text(html, encoding='utf-8')
+              public_meta = {key: before[key] for key in ('date', 'sha256', 'updatedAt')}
+              public_meta['servedSha256'] = hashlib.sha256(html.encode('utf-8')).hexdigest()
+              (output / 'status.json').write_text(json.dumps(public_meta), encoding='utf-8')
+              (output / '.nojekyll').touch()
+              if os.environ.get('GITHUB_OUTPUT'):
+                  with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+                      stream.write('changed=true\n')
+              print('Ready to publish:', before['date'], public_meta['servedSha256'])
+          
+          if __name__ == '__main__':
+              main()
+          PY
+      - name: Configure Pages
+        if: steps.sync.outputs.changed == 'true'
+        uses: actions/configure-pages@v5
+      - name: Upload website
+        if: steps.sync.outputs.changed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - name: Deploy website
+        if: steps.sync.outputs.changed == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4
