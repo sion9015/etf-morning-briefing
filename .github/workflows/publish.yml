@@ -1,4 +1,5 @@
 name: Publish briefing
+# A workflow-file update also provides a recoverable manual trigger when scheduled runs are delayed.
 on:
   workflow_dispatch:
   push:
