@@ -1,5 +1,5 @@
 name: Publish briefing
-# Manual recovery trigger: 2026-09-23.
+# Briefing publication is paused through 2026-10-04 and resumes on 2026-10-05.
 on:
   workflow_dispatch:
   push:
@@ -31,6 +31,7 @@ jobs:
           python3 - <<'PY'
           """Mirror the already-public Apps Script briefing without Google login cookies."""
           import hashlib
+          import datetime
           import json
           import os
           from pathlib import Path
@@ -38,6 +39,12 @@ jobs:
           import time
           import urllib.error
           import urllib.request
+
+          if datetime.date.today().isoformat() < '2026-10-05':
+              changed = 'true' if os.environ.get('GITHUB_EVENT_NAME') == 'push' else 'false'
+              with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+                  output.write('changed=' + changed + '\n')
+              raise SystemExit(0)
           
           SOURCE = 'https://script.google.com/macros/s/AKfycbwv7jWqhuJKHi-CzPmoni5nQuPLzEiF8NB0BToqV-0DMCMmZ2O22My7Zehw6iBGZmVCIQ/exec'
           PUBLIC = 'https://sion9015.github.io/etf-morning-briefing/'
