@@ -1,5 +1,5 @@
 name: Publish briefing
-# Manual publication trigger: 2026-10-06 quality revision.
+# Manual publication trigger: 2026-10-06 weekly backfill.
 on:
   workflow_dispatch:
   push:
