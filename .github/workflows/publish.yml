@@ -1,5 +1,5 @@
 name: Publish briefing
-# Briefing publication resumed on 2026-10-05.
+# Manual publication trigger: 2026-10-06 quality revision.
 on:
   workflow_dispatch:
   push:
