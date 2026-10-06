@@ -1,5 +1,5 @@
 name: Publish briefing
-# Briefing publication is paused through 2026-10-04 and resumes on 2026-10-05.
+# Briefing publication resumed on 2026-10-05.
 on:
   workflow_dispatch:
   push:
@@ -142,4 +142,5 @@ jobs:
         if: steps.sync.outputs.changed == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
+
 
